@@ -1,9 +1,10 @@
 import express from "express";
 import cors from "cors";
-import cashfree from "./lib/cfpg_server.js";
 import dotenv from "dotenv";
-dotenv.config();
+import cashfree from "./lib/cfpg_server.js";
+import db from "./lib/db.js";
 
+dotenv.config();
 const PORT = process.env.PORT || 3000;
 const app = express();
 
@@ -41,13 +42,13 @@ app.use(cors());
 app.get("/", (req, res) => {
   console.log("==================================");
   res.json({
-    message: "Server is running",
+    message: "Hello World",
   });
 });
 
-app.post("/webhook", function (req, res) {
+app.post("/webhook", async (req, res) => {
   // show all headers
-  console.log("HEADERS: ", req.headers);
+  // console.log("HEADERS: ", req.headers);
 
   // show all body
   // console.log("BODY: ", req.body);
@@ -58,9 +59,10 @@ app.post("/webhook", function (req, res) {
   try {
     const webhookSignature = req.headers["x-webhook-signature"];
     const webhookTimestamp = req.headers["x-webhook-timestamp"];
-    const webhookBody = req.rawBody;
+    const wbody = req.body;
+    const webhookRawBody = req.rawBody;
 
-    if (!webhookSignature || !webhookTimestamp || !webhookBody) {
+    if (!webhookSignature || !webhookTimestamp || !webhookRawBody) {
       console.log("Webhook Signature or Timestamp or Raw Body not found");
       res
         .status(400)
@@ -70,12 +72,94 @@ app.post("/webhook", function (req, res) {
 
     const ok = cashfree.PGVerifyWebhookSignature(
       webhookSignature,
-      webhookBody,
+      webhookRawBody,
       webhookTimestamp
     );
 
+    if (
+      wbody.data.order.order_tags.consumerId &&
+      wbody.data.order.order_tags.consumerId.length > 0
+    ) {
+      await db.transaction.create({
+        data: {
+          externalPaymentId: wbody.data.payment.cf_payment_id,
+          amount: wbody.data.payment.payment_amount,
+          status: wbody.data.payment.payment_status,
+          paymentTime: wbody.data.payment.payment_time,
+          paymentCurrency: wbody.data.payment.payment_currency,
+          paymentMessage: wbody.data.payment.payment_message,
+          bankReference: wbody.data.payment.bank_refernce,
+          paymentMethod: wbody.data.payment.payment_method,
+          paymentGroup: wbody.data.payment.payment_group,
+          paymentSurcharge: wbody.data.payment.payment_surcharge,
+          paymentGatewayDetails: wbody.data.payment_gateway_details,
+          paymentOffers: wbody.data.payment_offers ?? [],
+          errorDetails: wbody.data.error_details,
+          terminalDetails: wbody.data.terminal_details,
+          webhookResponse: wbody,
+          webhookAttempt: Number(req.headers["x-webhook-attempt"]),
+          webhookSignature: webhookSignature,
+          webhookTimestamp: new Date(Number(webhookTimestamp)),
+          webhookVersion: req.headers["x-webhook-version"],
+          idempotencyKey: req.headers["x-idempotency-key"],
+          order: {
+            connect: {
+              id: wbody.data.order.order_id,
+            },
+          },
+          feePlan: {
+            connect: {
+              id: wbody.data.order.order_tags.feePlanId,
+            },
+          },
+          consumer: {
+            connect: {
+              id: wbody.data.order.order_tags.consumerId,
+            },
+          },
+        },
+      });
+    } else {
+      // console.log(new Date(Number(webhookTimestamp)));
+      await db.transaction.create({
+        data: {
+          externalPaymentId: wbody.data.payment.cf_payment_id,
+          amount: wbody.data.payment.payment_amount,
+          status: wbody.data.payment.payment_status,
+          paymentTime: wbody.data.payment.payment_time,
+          paymentCurrency: wbody.data.payment.payment_currency,
+          paymentMessage: wbody.data.payment.payment_message,
+          bankReference: wbody.data.payment.bank_refernce,
+          paymentMethod: wbody.data.payment.payment_method,
+          paymentGroup: wbody.data.payment.payment_group,
+          paymentSurcharge: wbody.data.payment.payment_surcharge,
+          paymentGatewayDetails: wbody.data.payment_gateway_details,
+          paymentOffers: wbody.data.payment_offers ?? [],
+          errorDetails: wbody.data.error_details,
+          terminalDetails: wbody.data.terminal_details,
+          webhookResponse: wbody,
+          webhookAttempt: Number(req.headers["x-webhook-attempt"]),
+          webhookSignature: webhookSignature,
+          webhookTimestamp: new Date(Number(webhookTimestamp)),
+          webhookVersion: req.headers["x-webhook-version"],
+          idempotencyKey: req.headers["x-idempotency-key"],
+          order: {
+            connect: {
+              id: wbody.data.order.order_id,
+            },
+          },
+          feePlan: {
+            connect: {
+              id: wbody.data.order.order_tags.feePlanId,
+            },
+          },
+        },
+      });
+    }
+
     console.log("Type: ", ok.type);
-    console.log("Webhook Signature Verified: ", ok);
+    // console.log("Webhook Signature Verified: ", ok);
+
     res.status(200).send();
   } catch (err) {
     console.log("Error Caught: ", err.message);
