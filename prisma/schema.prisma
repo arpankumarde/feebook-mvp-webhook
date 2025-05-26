@@ -57,8 +57,8 @@ model ProviderVerification {
   provider         Provider           @relation(fields: [providerId], references: [id])
 }
 
-// Administrator model
-model Admin {
+// Moderator model
+model Moderator {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
